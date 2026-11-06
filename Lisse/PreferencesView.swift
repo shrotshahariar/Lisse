@@ -16,9 +16,13 @@ final class PreferencesPresenter {
             window.isReleasedWhenClosed = false
             self.window = window
         }
-        window?.center()
-        window?.makeKeyAndOrderFront(nil)
+        guard let window else { return }
+        window.level = .floating
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        window.center()
         NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        window.orderFrontRegardless()
     }
 }
 

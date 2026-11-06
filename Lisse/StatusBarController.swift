@@ -1,5 +1,4 @@
 import Cocoa
-import Combine
 
 final class StatusBarController: NSObject, NSMenuDelegate {
     private var statusItem: NSStatusItem?
@@ -7,6 +6,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     func install() {
         menu.delegate = self
+        menu.autoenablesItems = false
         refresh()
     }
 
@@ -20,19 +20,36 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
         if statusItem == nil {
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-            if let image = NSImage(systemSymbolName: "computermouse", accessibilityDescription: "Lisse") {
-                image.isTemplate = true
-                item.button?.image = image
-            } else {
-                item.button?.title = "L"
+            if let button = item.button {
+                if let image = NSImage(systemSymbolName: "computermouse", accessibilityDescription: "Lisse") {
+                    image.isTemplate = true
+                    image.size = NSSize(width: 18, height: 18)
+                    button.image = image
+                } else {
+                    button.title = "Lisse"
+                }
+                button.target = self
+                button.action = #selector(statusItemClicked(_:))
+                button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             }
-            item.menu = menu
+            // Leave item.menu unset. An empty status-item menu swallows the click,
+            // and menuWillOpen never runs, so the icon appears to do nothing.
             statusItem = item
         }
+        rebuild()
     }
 
     func menuWillOpen(_ menu: NSMenu) {
         rebuild()
+    }
+
+    @objc private func statusItemClicked(_ sender: Any?) {
+        rebuild()
+        PreferencesPresenter.shared.show()
+        guard let button = statusItem?.button else { return }
+        button.highlight(true)
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height), in: button)
+        button.highlight(false)
     }
 
     private func rebuild() {
