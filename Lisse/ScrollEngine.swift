@@ -18,6 +18,8 @@ final class ScrollEngine {
     private var linkArmed = false
     private var activeBlend = ScrollCurve.frameBlend(duration: ScrollTuning.standard.duration)
     private var activeSimulate = false
+    private var carryY = 0.0
+    private var carryX = 0.0
     private let settleThreshold = 1.0
     private let postThreshold = 0.05
     private let inputGap = 0.12
@@ -132,7 +134,11 @@ final class ScrollEngine {
             activeSimulate = tuning.simulateTrackpad
             lastWheelTime = CFAbsoluteTimeGetCurrent()
             inputEnded = false
-            if wasIdle { sentBegan = false }
+            if wasIdle {
+                sentBegan = false
+                carryY = 0
+                carryX = 0
+            }
             lock.unlock()
         }
 
@@ -222,10 +228,16 @@ final class ScrollEngine {
             inputEnded = true
         }
         let step = buffer.advance(blend: activeBlend)
-        deltaY = step.y
-        deltaX = step.x
+        carryY += step.y
+        carryX += step.x
+        deltaY = carryY
+        deltaX = carryX
         simulate = activeSimulate
         shouldPost = max(abs(deltaY), abs(deltaX)) > postThreshold
+        if shouldPost {
+            carryY = 0
+            carryX = 0
+        }
         if simulate {
             if inputEnded {
                 phase = .momentum
@@ -239,6 +251,13 @@ final class ScrollEngine {
         if inputEnded, buffer.residual() <= settleThreshold {
             shouldStop = true
             shouldEnd = simulate && sentBegan
+            if !shouldPost, max(abs(carryY), abs(carryX)) > 0.01 {
+                deltaY = carryY
+                deltaX = carryX
+                shouldPost = true
+            }
+            carryY = 0
+            carryX = 0
             buffer.reset()
             sentBegan = false
             lastWheelTime = 0
