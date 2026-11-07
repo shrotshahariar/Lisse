@@ -23,7 +23,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             if let button = item.button {
                 if let image = NSImage(systemSymbolName: "wind", accessibilityDescription: "Lisse") {
                     image.isTemplate = true
-                    image.size = NSSize(width: 18, height: 18)
+                    image.size = NSSize(width: 20, height: 20)
                     button.image = image
                 } else {
                     button.title = "Lisse"

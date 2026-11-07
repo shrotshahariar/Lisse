@@ -2,6 +2,8 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+private let lisseVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development"
+
 final class PreferencesPresenter {
     static let shared = PreferencesPresenter()
     private var window: NSWindow?
@@ -180,7 +182,7 @@ struct PreferencesRootView: View {
             }
             .padding(13).frame(maxWidth: .infinity, alignment: .leading)
             .background(accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
-            Text("LISSE 1.1").font(.system(size: 9, weight: .medium)).tracking(1.2)
+            Text("LISSE \(lisseVersion)").font(.system(size: 9, weight: .medium)).tracking(1.2)
                 .foregroundStyle(.tertiary).padding(.top, 20).padding(.bottom, 20).padding(.leading, 12)
         }
         .padding(.horizontal, 15).frame(width: 192)
@@ -443,7 +445,7 @@ private struct GeneralTab: View {
                 HStack(spacing: 16) {
                     Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 64, height: 64)
                     VStack(alignment: .leading, spacing: 5) {
-                        Text("Lisse 1.1").font(.system(size: 18, weight: .semibold, design: .rounded))
+                        Text("Lisse \(lisseVersion)").font(.system(size: 18, weight: .semibold, design: .rounded))
                         Text("A smoother everyday.").font(.system(size: 12)).foregroundStyle(.secondary)
                         Text("Made for your mouse. Designed for your Mac.").font(.system(size: 10)).foregroundStyle(.tertiary)
                     }
