@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 private let lisseVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Development"
 
-final class PreferencesPresenter {
+final class PreferencesPresenter: NSObject, NSWindowDelegate {
     static let shared = PreferencesPresenter()
     private var window: NSWindow?
 
@@ -17,16 +17,19 @@ final class PreferencesPresenter {
             window.titlebarAppearsTransparent = true
             window.setContentSize(NSSize(width: 940, height: 700))
             window.isReleasedWhenClosed = false
+            window.delegate = self
             self.window = window
         }
         applyAppearance(SettingsStore.shared.settings.appearance.mode)
         guard let window else { return }
-        window.level = .floating
-        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.center()
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
-        window.orderFrontRegardless()
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        window?.contentViewController = nil
+        window = nil
     }
 
     func applyAppearance(_ mode: AppearanceMode) {

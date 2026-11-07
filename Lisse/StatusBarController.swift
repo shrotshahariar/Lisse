@@ -18,6 +18,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             }
             return
         }
+        rebuild(settings: settings)
         if statusItem == nil {
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
             if let button = item.button {
@@ -28,27 +29,16 @@ final class StatusBarController: NSObject, NSMenuDelegate {
                 } else {
                     button.title = "Lisse"
                 }
-                button.target = self
-                button.action = #selector(statusItemClicked(_:))
-                button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+                button.setAccessibilityLabel("Lisse")
+                button.toolTip = "Lisse"
             }
-            // Leave item.menu unset. An empty status-item menu swallows the click,
-            // and menuWillOpen never runs, so the icon appears to do nothing.
+            item.menu = menu
             statusItem = item
         }
-        rebuild(settings: settings)
     }
 
     func menuWillOpen(_ menu: NSMenu) {
         rebuild()
-    }
-
-    @objc private func statusItemClicked(_ sender: Any?) {
-        rebuild()
-        guard let button = statusItem?.button else { return }
-        button.highlight(true)
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height), in: button)
-        button.highlight(false)
     }
 
     private func rebuild(settings snapshot: LisseSettings? = nil) {

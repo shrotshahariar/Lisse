@@ -286,7 +286,6 @@ final class ScrollEngine {
             inputEnded = true
         }
         let frameGeneration = generation
-        let template = eventTemplate?.copy()
         let pid = targetPID
         let elapsed = lastFrameTime > 0 ? max(0, now - lastFrameTime) : 1.0 / 60
         lastFrameTime = now
@@ -324,6 +323,7 @@ final class ScrollEngine {
             lastWheelTime = 0
             linkArmed = false
         }
+        let template = (shouldPost || shouldEnd) ? eventTemplate?.copy() : nil
         lock.unlock()
 
         if let template, pid > 1 {
