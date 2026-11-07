@@ -38,6 +38,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        if ScrollTrial.shared.remaining > 0 {
+            ScrollTrial.shared.cancel()
+            SettingsStore.shared.mutate { $0.isPaused = true }
+        }
         ScrollEngine.shared.stop()
     }
 

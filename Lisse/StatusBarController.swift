@@ -19,11 +19,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             return
         }
         if statusItem == nil {
-            let item = NSStatusBar.system.statusItem(withLength: 28)
+            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
             if let button = item.button {
-                if let image = NSImage(systemSymbolName: "wind", accessibilityDescription: "Lisse")?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 19, weight: .semibold, scale: .large)) {
+                if let image = NSImage(systemSymbolName: "wind", accessibilityDescription: "Lisse")?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 16, weight: .medium, scale: .medium)) {
                     image.isTemplate = true
-                    image.size = NSSize(width: 22, height: 22)
+                    image.size = NSSize(width: 18, height: 18)
                     button.image = image
                 } else {
                     button.title = "Lisse"
@@ -53,7 +53,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     private func rebuild(settings snapshot: LisseSettings? = nil) {
         menu.removeAllItems()
-        let trusted = AccessibilityPermission.isTrusted(prompt: false)
+        let trusted = AccessibilityPermission.canControlScrolling
         if !trusted {
             let grant = NSMenuItem(title: "Grant Accessibility Access…", action: #selector(grantAccess), keyEquivalent: "")
             grant.target = self
@@ -64,6 +64,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let settings = snapshot ?? SettingsStore.shared.settings
         let pause = NSMenuItem(title: settings.isPaused ? "Resume Lisse" : "Pause Lisse", action: #selector(togglePause), keyEquivalent: "")
         pause.target = self
+        pause.isEnabled = !settings.isPaused || trusted
         menu.addItem(pause)
         menu.addItem(.separator())
         let smooth = NSMenuItem(title: "Smooth Scrolling", action: #selector(toggleSmooth), keyEquivalent: "")
@@ -97,6 +98,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func togglePause() {
+        guard !SettingsStore.shared.settings.isPaused || AccessibilityPermission.canControlScrolling else { return }
         SettingsStore.shared.mutate { $0.isPaused.toggle() }
     }
 
