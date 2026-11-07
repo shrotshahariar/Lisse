@@ -20,6 +20,8 @@ It needs macOS 13 or later. The first time it opens, grant Accessibility access 
 - **Exceptions** are per-application profiles. An app can inherit the global settings or replace them. Turn on “only the applications listed below” to leave every other app untouched.
 - **Launch at login** registers Lisse with the system login items.
 
+Click the menu-bar icon for the compact menu. Choose **Open Settings…** (⌘,) to open the full window.
+
 The menu-bar icon can be hidden. Open Lisse again and the icon and preferences come back.
 
 ## Build

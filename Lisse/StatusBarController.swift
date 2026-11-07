@@ -45,7 +45,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     @objc private func statusItemClicked(_ sender: Any?) {
         rebuild()
-        PreferencesPresenter.shared.show()
         guard let button = statusItem?.button else { return }
         button.highlight(true)
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height), in: button)
@@ -78,7 +77,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(reverse)
 
         menu.addItem(.separator())
-        let preferences = NSMenuItem(title: "Preferences…", action: #selector(showPreferences), keyEquivalent: ",")
+        let preferences = NSMenuItem(title: "Open Settings…", action: #selector(showPreferences), keyEquivalent: ",")
         preferences.target = self
         menu.addItem(preferences)
 
