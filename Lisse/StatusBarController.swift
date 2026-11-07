@@ -19,11 +19,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             return
         }
         if statusItem == nil {
-            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+            let item = NSStatusBar.system.statusItem(withLength: 28)
             if let button = item.button {
-                if let image = NSImage(systemSymbolName: "wind", accessibilityDescription: "Lisse") {
+                if let image = NSImage(systemSymbolName: "wind", accessibilityDescription: "Lisse")?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 19, weight: .semibold, scale: .large)) {
                     image.isTemplate = true
-                    image.size = NSSize(width: 20, height: 20)
+                    image.size = NSSize(width: 22, height: 22)
                     button.image = image
                 } else {
                     button.title = "Lisse"
