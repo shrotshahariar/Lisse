@@ -16,17 +16,37 @@ final class ScrollEngine {
     private var inputEnded = true
     private var sentBegan = false
     private var linkArmed = false
-    private var activeBlend = ScrollCurve.frameBlend(duration: ScrollTuning.standard.duration)
+    private var activeDuration = ScrollTuning.standard.duration
+    private var lastFrameTime = 0.0
     private var activeSimulate = false
     private var carryY = 0.0
     private var carryX = 0.0
     private let settleThreshold = 1.0
-    private let postThreshold = 0.05
     private let inputGap = 0.12
     private let marker: Int64 = 0x4C4953534501
     private var launchpadCache = (at: 0.0, active: false)
+    private var eventTemplate: CGEvent?
+    private var targetPID: pid_t = 0
+    private var generation: UInt64 = 0
+    private let settingsProvider: () -> LisseSettings
+    private let postingAllowed: () -> Bool
+    private let frameStarter: (() -> Bool)?
+    private let eventPoster: (CGEvent, pid_t) -> Void
+    private let clock: () -> CFAbsoluteTime
 
-    private init() {}
+    init(
+        settings: @escaping () -> LisseSettings = { SettingsStore.shared.box.read() },
+        postingAllowed: @escaping () -> Bool = { AXIsProcessTrusted() && CGPreflightPostEventAccess() },
+        frameStarter: (() -> Bool)? = nil,
+        eventPoster: @escaping (CGEvent, pid_t) -> Void = { $0.postToPid($1) },
+        clock: @escaping () -> CFAbsoluteTime = CFAbsoluteTimeGetCurrent
+    ) {
+        settingsProvider = settings
+        self.postingAllowed = postingAllowed
+        self.frameStarter = frameStarter
+        self.eventPoster = eventPoster
+        self.clock = clock
+    }
 
     func start() {
         guard tapPort == nil else { return }
@@ -55,7 +75,7 @@ final class ScrollEngine {
     func stop() {
         retryTimer?.invalidate()
         retryTimer = nil
-        stopDisplayLink()
+        cancelSmoothing()
         if let tapSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), tapSource, .commonModes)
         }
@@ -79,7 +99,7 @@ final class ScrollEngine {
         return engine.handle(type: type, event: event)
     }
 
-    private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+    func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             if let tapPort {
                 CGEvent.tapEnable(tap: tapPort, enable: true)
@@ -99,7 +119,7 @@ final class ScrollEngine {
         }
 
         let identity = Self.identity(of: event)
-        let settings = SettingsStore.shared.box.read()
+        let settings = settingsProvider()
         guard var tuning = ScrollResolver.resolve(settings, identity: identity) else {
             return Unmanaged.passUnretained(event)
         }
@@ -118,11 +138,23 @@ final class ScrollEngine {
         )
 
         if plan.smoothY != 0 || plan.smoothX != 0 {
-            guard ensureDisplayLink() else {
+            // Never swallow the wheel unless we can deliver its replacement.
+            let pid = pid_t(event.getIntegerValueField(.eventTargetUnixProcessID))
+            guard postingAllowed(), pid > 1, let template = event.copy() else {
+                cancelSmoothing()
                 return Unmanaged.passUnretained(event)
             }
             let duration = tuning.simulateTrackpad ? ScrollCurve.simulateTrackpadDuration : tuning.duration
             lock.lock()
+            if targetPID != pid {
+                buffer.reset()
+                carryY = 0
+                carryX = 0
+                sentBegan = false
+            }
+            eventTemplate = template
+            targetPID = pid
+            generation &+= 1
             let wasIdle = buffer.residual() <= settleThreshold
             buffer.absorb(
                 y: plan.smoothY,
@@ -130,16 +162,24 @@ final class ScrollEngine {
                 speed: tuning.speed,
                 amplification: plan.amplification
             )
-            activeBlend = ScrollCurve.frameBlend(duration: duration)
+            activeDuration = duration
             activeSimulate = tuning.simulateTrackpad
-            lastWheelTime = CFAbsoluteTimeGetCurrent()
+            lastWheelTime = clock()
             inputEnded = false
             if wasIdle {
+                lastFrameTime = clock()
                 sentBegan = false
                 carryY = 0
                 carryX = 0
             }
+            linkArmed = true
             lock.unlock()
+            // Queue the input before starting the display callback. A callback
+            // can run immediately, including before CVDisplayLinkStart returns.
+            guard ensureDisplayLink() else {
+                cancelSmoothing()
+                return Unmanaged.passUnretained(event)
+            }
         }
 
         if plan.consumeOriginal {
@@ -179,37 +219,55 @@ final class ScrollEngine {
         return heldKeys.contains(code)
     }
 
-    @discardableResult
     private func ensureDisplayLink() -> Bool {
+        if let frameStarter { return frameStarter() }
         if let displayLink {
-            linkArmed = true
-            CVDisplayLinkStart(displayLink)
-            return true
+            return CVDisplayLinkIsRunning(displayLink)
+                || CVDisplayLinkStart(displayLink) == kCVReturnSuccess
         }
         var link: CVDisplayLink?
         guard CVDisplayLinkCreateWithActiveCGDisplays(&link) == kCVReturnSuccess, let link else {
             return false
         }
         let context = Unmanaged.passUnretained(self).toOpaque()
-        CVDisplayLinkSetOutputCallback(link, { _, _, _, _, _, user in
+        let callbackResult = CVDisplayLinkSetOutputCallback(link, { _, _, _, _, _, user in
             guard let user else { return kCVReturnSuccess }
             Unmanaged<ScrollEngine>.fromOpaque(user).takeUnretainedValue().displayFrame()
             return kCVReturnSuccess
         }, context)
+        guard callbackResult == kCVReturnSuccess else { return false }
         displayLink = link
-        linkArmed = true
-        CVDisplayLinkStart(link)
+        guard CVDisplayLinkStart(link) == kCVReturnSuccess else {
+            displayLink = nil
+            return false
+        }
         return true
     }
 
     private func stopDisplayLink() {
-        linkArmed = false
-        if let displayLink {
+        if let displayLink, CVDisplayLinkIsRunning(displayLink) {
             CVDisplayLinkStop(displayLink)
         }
     }
 
-    private func displayFrame() {
+    private func cancelSmoothing() {
+        lock.lock()
+        generation &+= 1
+        linkArmed = false
+        buffer.reset()
+        eventTemplate = nil
+        targetPID = 0
+        carryY = 0
+        carryX = 0
+        sentBegan = false
+        lastWheelTime = 0
+        inputEnded = true
+        lastFrameTime = 0
+        lock.unlock()
+        stopDisplayLink()
+    }
+
+    func displayFrame() {
         var deltaY = 0.0
         var deltaX = 0.0
         var phase = PostedPhase.plain
@@ -223,21 +281,26 @@ final class ScrollEngine {
             lock.unlock()
             return
         }
-        let now = CFAbsoluteTimeGetCurrent()
+        let now = clock()
         if !inputEnded, lastWheelTime > 0, now - lastWheelTime > inputGap {
             inputEnded = true
         }
-        let step = buffer.advance(blend: activeBlend)
+        let frameGeneration = generation
+        let template = eventTemplate?.copy()
+        let pid = targetPID
+        let elapsed = lastFrameTime > 0 ? max(0, now - lastFrameTime) : 1.0 / 60
+        lastFrameTime = now
+        let blend = ScrollCurve.frameBlend(duration: activeDuration, elapsed: elapsed)
+        let step = buffer.advance(blend: blend)
         carryY += step.y
         carryX += step.x
-        deltaY = carryY
-        deltaX = carryX
+        // Point deltas are integer pixels. Keep fractions for later frames.
+        deltaY = carryY.rounded(.towardZero)
+        deltaX = carryX.rounded(.towardZero)
         simulate = activeSimulate
-        shouldPost = max(abs(deltaY), abs(deltaX)) > postThreshold
-        if shouldPost {
-            carryY = 0
-            carryX = 0
-        }
+        shouldPost = deltaY != 0 || deltaX != 0
+        carryY -= deltaY
+        carryX -= deltaX
         if simulate {
             if inputEnded {
                 phase = .momentum
@@ -251,11 +314,9 @@ final class ScrollEngine {
         if inputEnded, buffer.residual() <= settleThreshold {
             shouldStop = true
             shouldEnd = simulate && sentBegan
-            if !shouldPost, max(abs(carryY), abs(carryX)) > 0.01 {
-                deltaY = carryY
-                deltaX = carryX
-                shouldPost = true
-            }
+            deltaY += carryY.rounded()
+            deltaX += carryX.rounded()
+            shouldPost = deltaY != 0 || deltaX != 0
             carryY = 0
             carryX = 0
             buffer.reset()
@@ -265,53 +326,69 @@ final class ScrollEngine {
         }
         lock.unlock()
 
-        if shouldPost {
-            post(y: deltaY, x: deltaX, simulate: simulate, phase: phase)
-        }
-        if shouldEnd {
-            post(y: 0, x: 0, simulate: true, phase: .ended)
+        if let template, pid > 1 {
+            if shouldPost {
+                post(template: template, pid: pid, y: deltaY, x: deltaX, simulate: simulate, phase: phase)
+            }
+            if shouldEnd {
+                post(template: template, pid: pid, y: 0, x: 0, simulate: true, phase: .ended)
+            }
         }
         if shouldStop {
             DispatchQueue.main.async { [weak self] in
-                self?.stopDisplayLink()
+                guard let self else { return }
+                self.lock.lock()
+                let stillFinished = self.generation == frameGeneration && !self.linkArmed
+                self.lock.unlock()
+                // A previous gesture must never stop a newly queued gesture.
+                if stillFinished { self.stopDisplayLink() }
             }
         }
     }
 
-    private func post(y: Double, x: Double, simulate: Bool, phase: PostedPhase) {
-        guard let event = CGEvent(
-            scrollWheelEvent2Source: nil,
-            units: .pixel,
-            wheelCount: 2,
-            wheel1: Int32(y.rounded()),
-            wheel2: Int32(x.rounded()),
-            wheel3: 0
-        ) else { return }
-        event.setDoubleValueField(.scrollWheelEventPointDeltaAxis1, value: y)
-        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: y)
-        event.setDoubleValueField(.scrollWheelEventPointDeltaAxis2, value: x)
-        event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis2, value: x)
-        event.setDoubleValueField(.scrollWheelEventIsContinuous, value: 1)
-        event.setIntegerValueField(.eventSourceUserData, value: marker)
-        if let cursor = CGEvent(source: nil)?.location {
-            event.location = cursor
+    private func post(template: CGEvent, pid: pid_t, y: Double, x: Double, simulate: Bool, phase: PostedPhase) {
+        guard postingAllowed(),
+              let event = template.copy(),
+              let deltas = CGEvent(
+                scrollWheelEvent2Source: nil,
+                units: .pixel,
+                wheelCount: 2,
+                wheel1: Int32(clamping: Int64(y.rounded())),
+                wheel2: Int32(clamping: Int64(x.rounded())),
+                wheel3: 0
+              ) else { return }
+        // Keep the original target window, position and modifiers. Fresh HID
+        // events lose this routing context and may never reach the scroll view.
+        for field: CGEventField in [
+            .scrollWheelEventDeltaAxis1, .scrollWheelEventDeltaAxis2,
+            .scrollWheelEventPointDeltaAxis1, .scrollWheelEventPointDeltaAxis2
+        ] {
+            event.setIntegerValueField(field, value: deltas.getIntegerValueField(field))
         }
+        for field: CGEventField in [.scrollWheelEventFixedPtDeltaAxis1, .scrollWheelEventFixedPtDeltaAxis2] {
+            event.setDoubleValueField(field, value: deltas.getDoubleValueField(field))
+        }
+        event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+        event.setIntegerValueField(.eventSourceUserData, value: marker)
+        event.setIntegerValueField(.scrollWheelEventScrollPhase, value: 0)
+        event.setIntegerValueField(.scrollWheelEventMomentumPhase, value: 0)
+        event.timestamp = DispatchTime.now().uptimeNanoseconds
         if simulate {
             switch phase {
             case .began:
-                event.setDoubleValueField(.scrollWheelEventScrollPhase, value: 1)
+                event.setIntegerValueField(.scrollWheelEventScrollPhase, value: 1)
             case .changed:
-                event.setDoubleValueField(.scrollWheelEventScrollPhase, value: 2)
+                event.setIntegerValueField(.scrollWheelEventScrollPhase, value: 2)
             case .momentum:
-                event.setDoubleValueField(.scrollWheelEventMomentumPhase, value: 2)
+                event.setIntegerValueField(.scrollWheelEventMomentumPhase, value: 2)
             case .ended:
-                event.setDoubleValueField(.scrollWheelEventScrollPhase, value: 4)
-                event.setDoubleValueField(.scrollWheelEventMomentumPhase, value: 3)
+                event.setIntegerValueField(.scrollWheelEventScrollPhase, value: 4)
+                event.setIntegerValueField(.scrollWheelEventMomentumPhase, value: 3)
             case .plain:
                 break
             }
         }
-        event.post(tap: .cghidEventTap)
+        eventPoster(event, pid)
     }
 
     private func launchpadIsActive(_ identity: AppIdentity) -> Bool {

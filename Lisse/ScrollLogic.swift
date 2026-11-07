@@ -68,9 +68,9 @@ struct ScrollTuning: Codable, Equatable {
         smoothVertical: true,
         smoothHorizontal: true,
         simulateTrackpad: false,
-        step: 33.6,
-        speed: 2.70,
-        duration: 4.35,
+        step: 28,
+        speed: 2.30,
+        duration: 4.80,
         accelerate: .option,
         swapAxes: .shift,
         pauseSmoothing: .command,
@@ -97,6 +97,54 @@ struct ScrollTuning: Codable, Equatable {
         }
         return copy
     }
+}
+
+enum ScrollPreset: String, CaseIterable, Identifiable {
+    case precise, balanced, soft
+    var id: String { rawValue }
+    var title: String {
+        switch self { case .precise: return "Precise"; case .balanced: return "Balanced"; case .soft: return "Soft glide" }
+    }
+    var subtitle: String {
+        switch self { case .precise: return "Quick and controlled"; case .balanced: return "Easy everyday flow"; case .soft: return "Softer, longer motion" }
+    }
+    var symbol: String {
+        switch self { case .precise: return "scope"; case .balanced: return "waveform.path"; case .soft: return "wind" }
+    }
+    var values: (step: Double, speed: Double, duration: Double) {
+        switch self {
+        case .precise: return (24, 2.0, 4.0)
+        case .balanced: return (28, 2.3, 4.5)
+        case .soft: return (28, 2.3, 4.8)
+        }
+    }
+    func applying(to tuning: ScrollTuning) -> ScrollTuning {
+        var copy = tuning
+        copy.smooth = true
+        copy.step = values.step
+        copy.speed = values.speed
+        copy.duration = values.duration
+        copy.simulateTrackpad = false
+        copy.durationBeforeTrackpadLock = nil
+        return copy
+    }
+    func matches(_ tuning: ScrollTuning) -> Bool {
+        !tuning.simulateTrackpad && abs(tuning.step - values.step) < 0.001
+            && abs(tuning.speed - values.speed) < 0.001 && abs(tuning.duration - values.duration) < 0.001
+    }
+}
+
+enum AppearanceMode: String, Codable, CaseIterable, Identifiable {
+    case system, light, dark
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
+}
+
+struct AppearanceSettings: Codable, Equatable {
+    var mode: AppearanceMode = .system
+    var accentHex: String = "159B91"
+    var animatePreview: Bool = true
+    static let standard = AppearanceSettings()
 }
 
 struct AppException: Codable, Equatable, Identifiable {
@@ -133,6 +181,12 @@ struct LisseSettings: Codable, Equatable {
     var exceptionsAreAllowlist: Bool
     var scroll: ScrollTuning
     var exceptions: [AppException]
+    var appearance: AppearanceSettings = .standard
+    var isPaused: Bool = false
+
+    enum CodingKeys: String, CodingKey {
+        case launchAtLogin, hideMenuBarIcon, exceptionsAreAllowlist, scroll, exceptions, appearance, isPaused
+    }
 
     static let standard = LisseSettings(
         launchAtLogin: false,
@@ -141,6 +195,19 @@ struct LisseSettings: Codable, Equatable {
         scroll: .standard,
         exceptions: []
     )
+}
+
+extension LisseSettings {
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        launchAtLogin = try values.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
+        hideMenuBarIcon = try values.decodeIfPresent(Bool.self, forKey: .hideMenuBarIcon) ?? false
+        exceptionsAreAllowlist = try values.decodeIfPresent(Bool.self, forKey: .exceptionsAreAllowlist) ?? false
+        scroll = try values.decodeIfPresent(ScrollTuning.self, forKey: .scroll) ?? .standard
+        exceptions = try values.decodeIfPresent([AppException].self, forKey: .exceptions) ?? []
+        appearance = try values.decodeIfPresent(AppearanceSettings.self, forKey: .appearance) ?? .standard
+        isPaused = try values.decodeIfPresent(Bool.self, forKey: .isPaused) ?? false
+    }
 }
 
 struct AppIdentity: Equatable {
@@ -169,6 +236,7 @@ enum ScrollResolver {
 
     /// `nil` means the event should pass through untouched (allowlist miss).
     static func resolve(_ settings: LisseSettings, identity: AppIdentity) -> ScrollTuning? {
+        guard !settings.isPaused else { return nil }
         if let item = match(settings, identity: identity) {
             return item.inherit ? settings.scroll : item.scroll
         }
@@ -253,7 +321,18 @@ enum ScrollCurve {
     static func frameBlend(duration: Double) -> Double {
         let clamped = min(max(duration, 0.01), durationUpperBound - 0.0001)
         let raw = 1 - (clamped / durationUpperBound).squareRoot()
-        return (raw * 1000).rounded() / 1000
+        return max(0.001, (raw * 1000).rounded() / 1000)
+    }
+
+    /// Keep the same glide duration at 60, 100, 120 or 144 Hz.
+    static func frameBlend(duration: Double, elapsed: TimeInterval) -> Double {
+        let base = frameBlend(duration: duration)
+        let interval = min(max(elapsed.isFinite ? elapsed : 1.0 / 60, 0), 0.1)
+        return 1 - pow(1 - base, interval * 60)
+    }
+
+    static func approximateGlideTime(duration: Double) -> TimeInterval {
+        log(0.05) / (60 * log(1 - frameBlend(duration: duration)))
     }
 }
 

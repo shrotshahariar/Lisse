@@ -10,8 +10,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         refresh()
     }
 
-    func refresh() {
-        if SettingsStore.shared.settings.hideMenuBarIcon {
+    func refresh(settings: LisseSettings? = nil) {
+        if (settings ?? SettingsStore.shared.settings).hideMenuBarIcon {
             if let statusItem {
                 NSStatusBar.system.removeStatusItem(statusItem)
                 self.statusItem = nil
@@ -21,7 +21,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         if statusItem == nil {
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
             if let button = item.button {
-                if let image = NSImage(systemSymbolName: "computermouse", accessibilityDescription: "Lisse") {
+                if let image = NSImage(systemSymbolName: "wind", accessibilityDescription: "Lisse") {
                     image.isTemplate = true
                     image.size = NSSize(width: 18, height: 18)
                     button.image = image
@@ -36,7 +36,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             // and menuWillOpen never runs, so the icon appears to do nothing.
             statusItem = item
         }
-        rebuild()
+        rebuild(settings: settings)
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -52,7 +52,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         button.highlight(false)
     }
 
-    private func rebuild() {
+    private func rebuild(settings snapshot: LisseSettings? = nil) {
         menu.removeAllItems()
         let trusted = AccessibilityPermission.isTrusted(prompt: false)
         if !trusted {
@@ -62,7 +62,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             menu.addItem(.separator())
         }
 
-        let settings = SettingsStore.shared.settings
+        let settings = snapshot ?? SettingsStore.shared.settings
+        let pause = NSMenuItem(title: settings.isPaused ? "Resume Lisse" : "Pause Lisse", action: #selector(togglePause), keyEquivalent: "")
+        pause.target = self
+        menu.addItem(pause)
+        menu.addItem(.separator())
         let smooth = NSMenuItem(title: "Smooth Scrolling", action: #selector(toggleSmooth), keyEquivalent: "")
         smooth.target = self
         smooth.state = settings.scroll.smooth ? .on : .off
@@ -91,6 +95,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func grantAccess() {
         _ = AccessibilityPermission.isTrusted(prompt: true)
         AccessibilityPermission.openSystemSettings()
+    }
+
+    @objc private func togglePause() {
+        SettingsStore.shared.mutate { $0.isPaused.toggle() }
     }
 
     @objc private func toggleSmooth() {

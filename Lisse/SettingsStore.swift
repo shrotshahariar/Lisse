@@ -40,8 +40,8 @@ final class SettingsStore: ObservableObject {
     func mutate(_ body: (inout LisseSettings) -> Void) {
         var copy = settings
         body(&copy)
-        settings = copy
         box.write(copy)
+        settings = copy
         persist()
     }
 
@@ -96,5 +96,34 @@ enum LoginItemController {
     static func isEnabled() -> Bool {
         guard #available(macOS 13.0, *) else { return false }
         return SMAppService.mainApp.status == .enabled
+    }
+}
+
+/// A short trial always returns to paused, even if the user leaves Settings.
+final class ScrollTrial: ObservableObject {
+    static let shared = ScrollTrial()
+    @Published private(set) var remaining = 0
+    private var timer: Timer?
+
+    func start() {
+        cancel()
+        remaining = 30
+        SettingsStore.shared.mutate { $0.isPaused = false }
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.remaining -= 1
+            if self.remaining <= 0 {
+                self.cancel()
+                SettingsStore.shared.mutate { $0.isPaused = true }
+            }
+        }
+        self.timer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    func cancel() {
+        timer?.invalidate()
+        timer = nil
+        if remaining != 0 { remaining = 0 }
     }
 }

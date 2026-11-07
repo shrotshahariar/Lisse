@@ -1,0 +1,75 @@
+name: Release Lisse
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to release (for example v1.1)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Validate version and release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]
+          test "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" = "$(git rev-parse HEAD)"
+          python3 - <<'PY'
+          import os, pathlib, re
+          project = pathlib.Path('Lisse.xcodeproj/project.pbxproj').read_text()
+          versions = set(re.findall(r'MARKETING_VERSION = ([^;]+);', project))
+          assert versions == {os.environ['RELEASE_TAG'][1:]}, f'Tag and app version differ: {versions}'
+          notes = pathlib.Path('releases') / (os.environ['RELEASE_TAG'] + '.md')
+          assert notes.is_file() and notes.stat().st_size > 0, 'Release notes are required'
+          PY
+      - name: Run scroll regression checks
+        run: bash scripts/test-scroll-delivery.sh
+      - name: Build universal app
+        shell: bash
+        run: LISSE_SDK="$(xcrun --sdk macosx --show-sdk-path)" bash scripts/build-app.sh build
+      - name: Verify release archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          codesign --verify --deep --strict build/Lisse.app
+          lipo -verify_arch arm64 x86_64 build/Lisse.app/Contents/MacOS/Lisse
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' build/Lisse.app/Contents/Info.plist)" = "${RELEASE_TAG#v}"
+          unzip -tq build/Lisse.zip
+      - name: Publish GitHub release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --json isDraft > "$RUNNER_TEMP/lisse-release.json" 2>/dev/null; then
+            python3 -c 'import json,sys; assert json.load(open(sys.argv[1]))["isDraft"], "This version is already published; create a new version instead."' "$RUNNER_TEMP/lisse-release.json"
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title "Lisse ${RELEASE_TAG#v}" --notes-file "releases/$RELEASE_TAG.md"
+          fi
+          gh release upload "$RELEASE_TAG" build/Lisse.zip --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --latest
+          gh release download "$RELEASE_TAG" --pattern Lisse.zip --dir "$RUNNER_TEMP/lisse-published"
+          cmp build/Lisse.zip "$RUNNER_TEMP/lisse-published/Lisse.zip"
