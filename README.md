@@ -1,67 +1,77 @@
-# Lisse
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="banner-dark.png">
+  <img src="banner-light.png" alt="Lisse — Make mouse-wheel scrolling glide. Tune the feel, give your mouse its own direction, and keep trackpad scrolling unchanged." width="1600">
+</picture>
 
-Lisse is a macOS menu-bar utility that makes mouse-wheel scrolling glide, and lets the wheel use its own direction from the trackpad.
+<p align="center">
+  <a href="https://github.com/shrotshahariar/Lisse/releases/download/v1.6/Lisse.zip"><img src="download-macos.png" alt="Download Lisse for macOS" width="320" height="60"></a>
+</p>
+<p align="center"><strong>macOS 13+ · Apple silicon and Intel</strong><br>Native menu-bar utility · Accessibility access required</p>
+<p align="center"><a href="https://github.com/shrotshahariar/Lisse/releases/latest">Release notes</a> · <a href="https://github.com/shrotshahariar/Lisse/issues">Report an issue</a> · <a href="#install-on-a-mac">Installation</a></p>
 
-It needs macOS 13 or later. The first time it opens, grant Accessibility access so Lisse can read and rewrite mouse-wheel events. Trackpad scrolling is left alone.
+---
 
-## Preferences
+## Lisse
 
-- **Precise, Balanced, and Soft glide** presets. Soft glide uses a longer, gentler easing curve, consistent across display refresh rates.
-- **Pause / Enable** at the top of Settings. The **Try for 30 seconds** action automatically returns to paused.
-- **Appearance** offers System, Light, or Dark mode, six accent colors, a custom color picker, and optional preview animation.
+Make mouse-wheel scrolling glide. Tune the feel, give your mouse its own direction, and keep trackpad scrolling unchanged.
 
-- **Smooth scrolling** for the vertical axis, the horizontal axis, or both.
-- **Step** is the smallest distance applied to one wheel notch.
-- **Speed** multiplies that distance.
-- **Duration** controls how long the glide takes. A higher value eases out more slowly.
-- **Simulate trackpad** posts the glide with trackpad-style scroll phases and locks duration at 4.75.
-- **Direction** can reverse vertical and horizontal scrolling separately.
-- **While held:** Option accelerates by 5×, Shift swaps the vertical wheel onto the horizontal axis, and Command pauses smoothing. Each shortcut can be changed or turned off.
-- **Exceptions** are per-application profiles. An app can inherit the global settings or replace them. Turn on “only the applications listed below” to leave every other app untouched.
-- **Launch at login** registers Lisse with the system login items.
+## Download
 
-Click the menu-bar icon for the compact menu. Choose **Open Settings…** (⌘,) to open the full window.
+**[Download Lisse for macOS](https://github.com/shrotshahariar/Lisse/releases/download/v1.6/Lisse.zip)** · [All releases](https://github.com/shrotshahariar/Lisse/releases)
 
-The menu-bar icon can be hidden. Open Lisse again and the icon and preferences come back.
+| Release | Requires | Mac support |
+| --- | --- | --- |
+| Lisse 1.6 | macOS 13 or later | Apple silicon and Intel |
 
-## Build
+## Install on a Mac
 
-Open `Lisse.xcodeproj` in Xcode and run the Lisse scheme, or:
+1. Download the ZIP, extract it, and move **Lisse.app** into **Applications**.
+2. Open the app. This release is ad-hoc signed and has not been notarized by Apple.
+3. If macOS blocks it, open **System Settings → Privacy & Security → Open Anyway**, then confirm that you want to open this downloaded app.
 
-```bash
-xcodebuild -scheme Lisse -configuration Debug build
-```
+Updating? Quit the running app first, then replace the copy in Applications.
 
-With the macOS Command Line Tools installed, you can also build a universal app without opening Xcode:
+Allow **Lisse** in **System Settings → Privacy & Security → Accessibility** so it can read and rewrite mouse-wheel events. Open Settings from the menu-bar icon to choose your scrolling preferences.
 
-```bash
+## Find your glide
+
+| Control | What it changes |
+| --- | --- |
+| **Precise, Balanced, Soft glide** | Start with a preset, from a tighter response to a longer, gentler glide. |
+| **Step, Speed, Duration** | Tune the distance of a wheel notch, its multiplier, and how long scrolling eases out. |
+| **Vertical and horizontal** | Smooth either axis or both; reverse their directions independently. |
+| **Per-app profiles** | Give individual apps their own settings, or enable Lisse only for listed apps. |
+| **Pause and Try for 30 seconds** | Compare the feel; the timed trial returns to paused automatically. |
+
+## Your mouse, your settings
+
+Mouse-wheel direction is independent of the trackpad. By default, hold **Option** to accelerate, **Shift** to scroll horizontally, or **Command** to pause smoothing. Each modifier can be changed or turned off.
+
+Choose System, Light, or Dark appearance, adjust the accent color, and enable launch at login. If you hide the menu-bar icon, opening Lisse again brings the icon and preferences back.
+
+[Read the full preferences guide](GUIDE.md#preferences), including trackpad simulation and app exceptions. Button remapping and Logitech-specific device features are outside Lisse’s scope.
+
+## Permissions
+
+Accessibility access is used to intercept and modify mouse-wheel events. Trackpad scrolling is left alone. You can pause Lisse from Settings or quit it from the menu bar.
+
+## Build it yourself
+
+With Apple’s Command Line Tools installed:
+
+```sh
 scripts/build-app.sh
 scripts/test-scroll-delivery.sh
 ```
 
-The build script writes `build/Lisse.app` and `build/Lisse.zip`. Set `LISSE_SDK` to choose another installed SDK. The scroll checks do not install event taps or post events to macOS.
+The build produces `build/Lisse.app` and `build/Lisse.zip` for Apple silicon and Intel. The regression checks do not install event taps or post events to macOS. You can also open `Lisse.xcodeproj` in Xcode and run the Lisse scheme.
 
-For a settings-only launch with scrolling paused:
+See the [development and release guide](GUIDE.md#build) for SDK selection and release packaging.
 
-```bash
-open build/Lisse.app --args --settings-only
-```
+## Support and updates
 
-The master icon is in `Design/Lisse-Icon-Master.png`; app-size exports are in the asset catalog.
+[Release notes](https://github.com/shrotshahariar/Lisse/releases/latest) · [Report an issue](https://github.com/shrotshahariar/Lisse/issues)
 
-Button remapping and Logitech device features are not part of Lisse.
+For scrolling issues, include your macOS version, mouse model, affected app, and the preset or settings in use.
 
-## Releases
-
-Every new version is published on [GitHub Releases](https://github.com/shrotshahariar/Lisse/releases). Update the version and build number in the Xcode project, add release notes in `releases/vVERSION.md`, commit the changes, and push a matching tag:
-
-```bash
-git tag v1.1
-git push origin main v1.1
-```
-
-The Release Lisse workflow runs scroll regression checks, builds both Mac architectures, verifies the archive, and publishes `Lisse.zip`. A failed run can be retried from Actions with its existing version tag. Published versions are never overwritten.
-
-For local updates, keep one installed copy at `/Applications/Lisse.app`. Verify the new release before moving older Lisse app bundles to Trash; preserve preferences, source code, and ZIP archives. Launch the installed copy with `--settings-only` during replacement so scrolling stays paused.
-
-Release builds are ad-hoc signed and are not notarized.
+Made by [Shahariar Jaman](https://github.com/shrotshahariar). Version 1.6 design process adapted from [unslop by Damir Sokolovsky](https://heydamir.design/unslop), CC BY 4.0.
